@@ -5,7 +5,7 @@
 //! so the same code runs live (fed by the UDP socket) and inside the
 //! software-in-the-loop runner (fed directly by the simulator).
 
-use proto::{flags, Packet, Phase, APIDS, CHANNELS};
+use proto::{APIDS, CHANNELS, Packet, Phase, flags};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -50,10 +50,22 @@ impl Limit {
 }
 
 const fn hi(channel: &'static str, y: f64, r: f64) -> Limit {
-    Limit { channel, yellow_lo: None, yellow_hi: Some(y), red_lo: None, red_hi: Some(r) }
+    Limit {
+        channel,
+        yellow_lo: None,
+        yellow_hi: Some(y),
+        red_lo: None,
+        red_hi: Some(r),
+    }
 }
 const fn lo(channel: &'static str, y: f64, r: f64) -> Limit {
-    Limit { channel, yellow_lo: Some(y), yellow_hi: None, red_lo: Some(r), red_hi: None }
+    Limit {
+        channel,
+        yellow_lo: Some(y),
+        yellow_hi: None,
+        red_lo: Some(r),
+        red_hi: None,
+    }
 }
 
 /// Flight rules. Thresholds sit above the nominal envelope of the simulated
@@ -194,14 +206,24 @@ impl Ground {
     pub fn new(limits: Vec<Limit>) -> Self {
         let stats = APIDS
             .iter()
-            .map(|a| LinkStats { apid: a.apid, name: a.name, ..Default::default() })
+            .map(|a| LinkStats {
+                apid: a.apid,
+                name: a.name,
+                ..Default::default()
+            })
             .collect();
         let limits = limits
             .into_iter()
             .map(|l| {
                 (
                     l.channel,
-                    LimitState { limit: l, level: Level::Nominal, pending: Level::Nominal, pending_count: 0, open_alarm: None },
+                    LimitState {
+                        limit: l,
+                        level: Level::Nominal,
+                        pending: Level::Nominal,
+                        pending_count: 0,
+                        open_alarm: None,
+                    },
                 )
             })
             .collect();
@@ -231,7 +253,11 @@ impl Ground {
     }
 
     fn event(&mut self, delta: &mut Delta, kind: &'static str, text: String) {
-        let e = Event { met: self.met, kind, text };
+        let e = Event {
+            met: self.met,
+            kind,
+            text,
+        };
         self.events.push(e.clone());
         delta.events.push(e);
     }
@@ -246,7 +272,9 @@ impl Ground {
                 use proto::DecodeError::*;
                 match e {
                     BadCrc { .. } => self.errors.crc += 1,
-                    LengthMismatch { .. } | TooShort { .. } | PayloadSize { .. } => self.errors.length += 1,
+                    LengthMismatch { .. } | TooShort { .. } | PayloadSize { .. } => {
+                        self.errors.length += 1
+                    }
                     BadVersion(_) | NoSecondaryHeader => self.errors.header += 1,
                     UnknownApid(_) => self.errors.unknown_apid += 1,
                 }
@@ -257,7 +285,10 @@ impl Ground {
         if self.link != LinkState::Aos {
             let text = match self.link {
                 LinkState::NoSignal => "First frame received: acquisition of signal".to_string(),
-                _ => format!("Signal reacquired after {:.1} s", now_s - self.last_any_rx_s.unwrap_or(now_s)),
+                _ => format!(
+                    "Signal reacquired after {:.1} s",
+                    now_s - self.last_any_rx_s.unwrap_or(now_s)
+                ),
             };
             self.met = pkt.met_us as f64 / 1e6;
             self.link = LinkState::Aos;
@@ -300,8 +331,8 @@ impl Ground {
 
         match c.name {
             "status.phase" => {
-                if let Some(p) = Phase::from_u8(v as u8) {
-                    if self.phase != Some(p) {
+                if let Some(p) = Phase::from_u8(v as u8)
+                    && self.phase != Some(p) {
                         let text = match self.phase {
                             None => format!("Phase {}", p.name()),
                             Some(prev) => format!("{} → {}", prev.name(), p.name()),
@@ -312,7 +343,6 @@ impl Ground {
                             self.on_touchdown(met, delta);
                         }
                     }
-                }
             }
             "status.flags" => {
                 let f = v as u8;
@@ -338,27 +368,47 @@ impl Ground {
         // Touchdown rate = last descending vertical speed before landing.
         let vs = channel_by_name("nav.vspeed").map(|c| c.id);
         let td = vs.and_then(|id| {
-            self.history.get(&id).and_then(|h| h.iter().rev().map(|(_, v)| *v).find(|v| *v < -0.05))
+            self.history
+                .get(&id)
+                .and_then(|h| h.iter().rev().map(|(_, v)| *v).find(|v| *v < -0.05))
         });
         if let Some(td) = td {
             self.touchdown_vspeed = Some(td);
             self.event(delta, "VEHICLE", format!("Touchdown at {:.1} m/s", -td));
             // A one-shot derived measurement: force it past persistence.
             for _ in 0..PERSISTENCE {
-                self.check_limit(TOUCHDOWN_CHANNEL, "Touchdown vertical speed", met, td, delta);
+                self.check_limit(
+                    TOUCHDOWN_CHANNEL,
+                    "Touchdown vertical speed",
+                    met,
+                    td,
+                    delta,
+                );
             }
         }
     }
 
-    fn check_limit(&mut self, name: &'static str, label: &'static str, met: f64, v: f64, delta: &mut Delta) {
-        let Some(ls) = self.limits.get_mut(name) else { return };
+    fn check_limit(
+        &mut self,
+        name: &'static str,
+        label: &'static str,
+        met: f64,
+        v: f64,
+        delta: &mut Delta,
+    ) {
+        let Some(ls) = self.limits.get_mut(name) else {
+            return;
+        };
         let lvl = ls.limit.level(v);
         if lvl == ls.level {
             ls.pending_count = 0;
             if let Some(i) = ls.open_alarm {
                 // Track the worst value while the excursion lasts.
                 let a = &mut self.alarms[i];
-                if (v - a.value).abs() > 0.0 && ls.limit.level(v) >= a.level && worse(&ls.limit, v, a.value) {
+                if (v - a.value).abs() > 0.0
+                    && ls.limit.level(v) >= a.level
+                    && worse(&ls.limit, v, a.value)
+                {
                     a.value = v;
                 }
             }
@@ -423,9 +473,9 @@ impl Ground {
     /// Periodic housekeeping: detect loss of signal.
     pub fn tick(&mut self, now_s: f64) -> Delta {
         let mut delta = Delta::default();
-        if self.link == LinkState::Aos {
-            if let Some(t) = self.last_any_rx_s {
-                if now_s - t > LOS_TIMEOUT_S {
+        if self.link == LinkState::Aos
+            && let Some(t) = self.last_any_rx_s
+                && now_s - t > LOS_TIMEOUT_S {
                     self.link = LinkState::Los;
                     let in_entry = self.phase == Some(Phase::Entry);
                     let text = if in_entry {
@@ -435,8 +485,6 @@ impl Ground {
                     };
                     self.event(&mut delta, "LOS", text);
                 }
-            }
-        }
         for s in &mut self.stats {
             s.window.retain(|t| now_s - *t <= 1.0);
             s.rate_hz = s.window.len() as f64;
@@ -470,7 +518,7 @@ fn worse(l: &Limit, v: f64, current: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proto::{apid, PayloadWriter};
+    use proto::{PayloadWriter, apid};
 
     fn thermal(seq: u16, met: f64, shield: f32) -> Vec<u8> {
         Packet {

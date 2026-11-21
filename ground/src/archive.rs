@@ -15,7 +15,9 @@ impl Writer {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        Ok(Writer { out: BufWriter::new(File::create(path)?) })
+        Ok(Writer {
+            out: BufWriter::new(File::create(path)?),
+        })
     }
 
     pub fn write(&mut self, t_s: f64, frame: &[u8]) -> io::Result<()> {
@@ -37,7 +39,9 @@ pub fn read(path: &Path) -> io::Result<Vec<(f64, Vec<u8>)>> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        let (Some(t), Some(hex)) = (v["t"].as_f64(), v["frame"].as_str()) else { continue };
+        let (Some(t), Some(hex)) = (v["t"].as_f64(), v["frame"].as_str()) else {
+            continue;
+        };
         let bytes = (0..hex.len() / 2)
             .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
             .collect();

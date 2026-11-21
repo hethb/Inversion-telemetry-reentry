@@ -48,6 +48,7 @@ fn main() -> std::io::Result<()> {
             corrupt_rate: a.corrupt,
             fail_main: a.fail_main,
             heatshield_spike_at: a.spike_at,
+            heatshield_spike_width: None,
             no_blackout: a.no_blackout,
         },
         ..Config::default()

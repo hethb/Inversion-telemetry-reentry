@@ -3,18 +3,18 @@
 //! display (HTTP + WebSocket).
 
 use axum::{
+    Json, Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::{Html, IntoResponse},
     routing::{get, post},
-    Json, Router,
 };
 use clap::Parser;
-use ground::{archive, Delta, Ground};
-use proto::{Phase, APIDS, CHANNELS};
-use serde_json::{json, Value};
+use ground::{Delta, Ground, archive};
+use proto::{APIDS, CHANNELS, Phase};
+use serde_json::{Value, json};
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -22,7 +22,7 @@ use std::{
 };
 use tokio::{
     net::UdpSocket,
-    sync::{broadcast, Mutex},
+    sync::{Mutex, broadcast},
 };
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
@@ -83,8 +83,11 @@ fn status(g: &Ground) -> Value {
 }
 
 fn snapshot(g: &Ground) -> Value {
-    let history: serde_json::Map<String, Value> =
-        g.history.iter().map(|(ch, h)| (ch.to_string(), json!(h))).collect();
+    let history: serde_json::Map<String, Value> = g
+        .history
+        .iter()
+        .map(|(ch, h)| (ch.to_string(), json!(h)))
+        .collect();
     json!({
         "type": "snapshot",
         "meta": meta(g),
@@ -116,7 +119,12 @@ async fn main() -> anyhow_lite::Result<()> {
     // Telemetry source: live UDP or archive replay.
     if let Some(path) = a.replay.clone() {
         let frames = archive::read(&path)?;
-        eprintln!("replaying {} frames from {} at {}x", frames.len(), path.display(), a.replay_speed);
+        eprintln!(
+            "replaying {} frames from {} at {}x",
+            frames.len(),
+            path.display(),
+            a.replay_speed
+        );
         let app2 = app.clone();
         let speed = a.replay_speed.max(0.01);
         tokio::spawn(async move {
@@ -144,7 +152,9 @@ async fn main() -> anyhow_lite::Result<()> {
             let mut buf = vec![0u8; 2048];
             let mut since_flush = 0u32;
             loop {
-                let Ok((n, _)) = sock.recv_from(&mut buf).await else { continue };
+                let Ok((n, _)) = sock.recv_from(&mut buf).await else {
+                    continue;
+                };
                 let t = app2.now();
                 if let Some(w) = writer.as_mut() {
                     let _ = w.write(t, &buf[..n]);
@@ -173,7 +183,11 @@ async fn main() -> anyhow_lite::Result<()> {
                 pending.merge(d);
                 let batch = std::mem::take(&mut *pending);
                 drop(pending);
-                let samples: Vec<_> = batch.samples.iter().map(|s| json!([s.ch, s.met, s.v])).collect();
+                let samples: Vec<_> = batch
+                    .samples
+                    .iter()
+                    .map(|s| json!([s.ch, s.met, s.v]))
+                    .collect();
                 let msg = json!({
                     "type": "batch",
                     "samples": samples,

@@ -68,15 +68,39 @@ pub struct ApidInfo {
 }
 
 pub const APIDS: &[ApidInfo] = &[
-    ApidInfo { apid: apid::NAV, name: "NAV", payload_len: 28 },
-    ApidInfo { apid: apid::THERMAL, name: "THERMAL", payload_len: 16 },
-    ApidInfo { apid: apid::POWER, name: "POWER", payload_len: 12 },
-    ApidInfo { apid: apid::STATUS, name: "STATUS", payload_len: 2 },
+    ApidInfo {
+        apid: apid::NAV,
+        name: "NAV",
+        payload_len: 28,
+    },
+    ApidInfo {
+        apid: apid::THERMAL,
+        name: "THERMAL",
+        payload_len: 16,
+    },
+    ApidInfo {
+        apid: apid::POWER,
+        name: "POWER",
+        payload_len: 12,
+    },
+    ApidInfo {
+        apid: apid::STATUS,
+        name: "STATUS",
+        payload_len: 2,
+    },
 ];
 
 macro_rules! ch {
     ($id:expr, $name:expr, $label:expr, $unit:expr, $apid:expr, $off:expr, $ty:ident) => {
-        Channel { id: $id, name: $name, label: $label, unit: $unit, apid: $apid, offset: $off, ty: FieldType::$ty }
+        Channel {
+            id: $id,
+            name: $name,
+            label: $label,
+            unit: $unit,
+            apid: $apid,
+            offset: $off,
+            ty: FieldType::$ty,
+        }
     };
 }
 
@@ -89,10 +113,42 @@ pub const CHANNELS: &[Channel] = &[
     ch!(4, "nav.lat", "Latitude", "deg", apid::NAV, 16, F32),
     ch!(5, "nav.lon", "Longitude", "deg", apid::NAV, 20, F32),
     ch!(6, "nav.vspeed", "Vertical speed", "m/s", apid::NAV, 24, F32),
-    ch!(7, "thermal.heatshield", "Heatshield temp", "°C", apid::THERMAL, 0, F32),
-    ch!(8, "thermal.heatflux", "Stagnation heat flux", "W/cm²", apid::THERMAL, 4, F32),
-    ch!(9, "thermal.backshell", "Backshell temp", "°C", apid::THERMAL, 8, F32),
-    ch!(10, "thermal.payload", "Payload bay temp", "°C", apid::THERMAL, 12, F32),
+    ch!(
+        7,
+        "thermal.heatshield",
+        "Heatshield temp",
+        "°C",
+        apid::THERMAL,
+        0,
+        F32
+    ),
+    ch!(
+        8,
+        "thermal.heatflux",
+        "Stagnation heat flux",
+        "W/cm²",
+        apid::THERMAL,
+        4,
+        F32
+    ),
+    ch!(
+        9,
+        "thermal.backshell",
+        "Backshell temp",
+        "°C",
+        apid::THERMAL,
+        8,
+        F32
+    ),
+    ch!(
+        10,
+        "thermal.payload",
+        "Payload bay temp",
+        "°C",
+        apid::THERMAL,
+        12,
+        F32
+    ),
     ch!(11, "power.bus_v", "Bus voltage", "V", apid::POWER, 0, F32),
     ch!(12, "power.current", "Bus current", "A", apid::POWER, 4, F32),
     ch!(13, "power.soc", "Battery SOC", "%", apid::POWER, 8, F32),
@@ -162,7 +218,11 @@ pub fn crc16(data: &[u8]) -> u16 {
     for &b in data {
         crc ^= (b as u16) << 8;
         for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 { (crc << 1) ^ 0x1021 } else { crc << 1 };
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
         }
     }
     crc
@@ -179,13 +239,25 @@ pub struct Packet {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum DecodeError {
-    TooShort { len: usize },
+    TooShort {
+        len: usize,
+    },
     BadVersion(u8),
     NoSecondaryHeader,
-    LengthMismatch { declared: usize, actual: usize },
-    BadCrc { expected: u16, computed: u16 },
+    LengthMismatch {
+        declared: usize,
+        actual: usize,
+    },
+    BadCrc {
+        expected: u16,
+        computed: u16,
+    },
     UnknownApid(u16),
-    PayloadSize { apid: u16, expected: usize, actual: usize },
+    PayloadSize {
+        apid: u16,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl std::fmt::Display for DecodeError {
@@ -198,11 +270,21 @@ impl std::fmt::Display for DecodeError {
                 write!(f, "length field says {declared} B, frame has {actual} B")
             }
             DecodeError::BadCrc { expected, computed } => {
-                write!(f, "CRC mismatch (frame {expected:#06x}, computed {computed:#06x})")
+                write!(
+                    f,
+                    "CRC mismatch (frame {expected:#06x}, computed {computed:#06x})"
+                )
             }
             DecodeError::UnknownApid(a) => write!(f, "unknown APID {a:#05x}"),
-            DecodeError::PayloadSize { apid, expected, actual } => {
-                write!(f, "APID {apid:#05x} payload {actual} B, expected {expected} B")
+            DecodeError::PayloadSize {
+                apid,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "APID {apid:#05x} payload {actual} B, expected {expected} B"
+                )
             }
         }
     }
@@ -246,7 +328,10 @@ impl Packet {
         }
         let declared = PRIMARY_HEADER_LEN + word2 as usize + 1;
         if declared != frame.len() {
-            return Err(DecodeError::LengthMismatch { declared, actual: frame.len() });
+            return Err(DecodeError::LengthMismatch {
+                declared,
+                actual: frame.len(),
+            });
         }
         let body = &frame[..frame.len() - CRC_LEN];
         let expected = u16::from_be_bytes([frame[frame.len() - 2], frame[frame.len() - 1]]);
@@ -266,7 +351,12 @@ impl Packet {
                 actual: payload.len(),
             });
         }
-        Ok(Packet { apid, seq: word1 & 0x3FFF, met_us: u64::from_be_bytes(met), payload })
+        Ok(Packet {
+            apid,
+            seq: word1 & 0x3FFF,
+            met_us: u64::from_be_bytes(met),
+            payload,
+        })
     }
 
     /// Decommutate the payload into (channel id, engineering value) pairs.
@@ -317,7 +407,11 @@ mod tests {
             apid: apid::NAV,
             seq: 42,
             met_us: 123_456_789,
-            payload: PayloadWriter::new(apid::NAV).f32(0, 120.5).f32(4, 7801.0).f32(12, 3.2).finish(),
+            payload: PayloadWriter::new(apid::NAV)
+                .f32(0, 120.5)
+                .f32(4, 7801.0)
+                .f32(12, 3.2)
+                .finish(),
         }
     }
 
@@ -346,7 +440,10 @@ mod tests {
     fn detects_bit_flip() {
         let mut frame = sample().encode();
         frame[10] ^= 0x01;
-        assert!(matches!(Packet::decode(&frame), Err(DecodeError::BadCrc { .. })));
+        assert!(matches!(
+            Packet::decode(&frame),
+            Err(DecodeError::BadCrc { .. })
+        ));
     }
 
     #[test]
@@ -369,7 +466,11 @@ mod tests {
     fn payload_layouts_fit_their_apids() {
         for c in CHANNELS {
             let info = apid_info(c.apid).unwrap();
-            assert!(c.offset + c.ty.size() <= info.payload_len, "{} overflows", c.name);
+            assert!(
+                c.offset + c.ty.size() <= info.payload_len,
+                "{} overflows",
+                c.name
+            );
         }
     }
 }

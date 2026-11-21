@@ -121,6 +121,7 @@ function fmtMet(t) {
   const s = Math.max(0, Math.floor(t)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
   return `T+${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
+function fmtNum(v, dp) { const s = v.toFixed(dp); return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s; }
 function levelOf(name, v) {
   const l = LIMIT[name]; if (!l || v == null) return "nominal";
   if ((l.red_lo != null && v < l.red_lo) || (l.red_hi != null && v > l.red_hi)) return "red";
@@ -208,10 +209,13 @@ function drawChart(id, lines, opt = {}) {
   // series, min/max-decimated per pixel column
   for (const L of lines) {
     ctx.strokeStyle = L.color; ctx.lineWidth = 1.5; ctx.beginPath();
-    let px = -1, mn = 0, mx = 0, started = false;
+    let px = -1, mn = 0, mx = 0, started = false, prevT = null;
     const flush = () => { if (px < 0) return; if (!started) { ctx.moveTo(px, Y(mn)); started = true; } ctx.lineTo(px, Y(mn)); ctx.lineTo(px, Y(mx)); };
     for (const [t, v] of L.data) {
       if (t > tEnd) break;
+      // Do not interpolate across telemetry gaps (LOS / blackout).
+      if (prevT != null && t - prevT > 20) { flush(); px = -1; started = false; ctx.stroke(); ctx.beginPath(); }
+      prevT = t;
       const x = Math.round(X(t));
       if (x !== px) { flush(); px = x; mn = mx = v; } else { if (v < mn) mn = v; if (v > mx) mx = v; }
     }
@@ -255,7 +259,7 @@ function renderTiles() {
   for (const [name, , , dp] of TILES) {
     const el = $("t-" + name); if (!el) continue;
     const v = valueAt(name, t);
-    el.querySelector(".v span").textContent = v == null ? "--" : v.toFixed(dp);
+    el.querySelector(".v span").textContent = v == null ? "--" : fmtNum(v, dp);
     el.className = "tile " + (v == null ? "" : levelOf(name, v) === "nominal" ? (LIMIT[name] ? "green" : "") : levelOf(name, v));
   }
 }
@@ -305,7 +309,7 @@ function render() {
   drawChart("c-temp", [{ data: series("thermal.heatshield"), color: orange, label: "heatshield °C" }, { data: series("thermal.backshell"), color: blue, label: "backshell °C" }], { limits: limitLines("thermal.heatshield") });
   drawChart("c-flux", [{ data: series("thermal.heatflux"), color: orange, label: "W/cm²" }], { zero: true });
   drawChart("c-pwr", [{ data: series("power.bus_v"), color: blue, label: "bus V" }, { data: series("power.current"), color: COL.green, label: "current A" }], { zero: true, limits: limitLines("power.bus_v") });
-  const last = (n, dp, u) => { const v = valueAt(n, viewTime()); return v == null ? "" : `${v.toFixed(dp)} ${u}`; };
+  const last = (n, dp, u) => { const v = valueAt(n, viewTime()); return v == null ? "" : `${fmtNum(v, dp)} ${u}`; };
   $("h-alt").textContent = last("nav.altitude", 2, "km"); $("h-vel").textContent = last("nav.velocity", 0, "m/s");
   $("h-acc").textContent = last("nav.accel", 2, "g"); $("h-temp").textContent = last("thermal.heatshield", 0, "°C");
   $("h-flux").textContent = last("thermal.heatflux", 1, "W/cm²"); $("h-pwr").textContent = last("power.bus_v", 2, "V");

@@ -8,7 +8,7 @@
 //! The simulator is deterministic for a given seed, so the SIL runner can
 //! replay exactly the same flight with and without injected faults.
 
-use proto::{apid, flags, Packet, PayloadWriter, Phase};
+use proto::{Packet, PayloadWriter, Phase, apid, flags};
 
 const R_EARTH: f64 = 6_371_000.0;
 const G0: f64 = 9.806_65;
@@ -55,6 +55,8 @@ pub struct Faults {
     pub fail_main: bool,
     /// One-off heatshield sensor glitch at this MET (seconds).
     pub heatshield_spike_at: Option<f64>,
+    /// Duration of the glitch in mission seconds (default 1.2 s).
+    pub heatshield_spike_width: Option<f64>,
     /// Disable the physical plasma-blackout model (for link testing).
     pub no_blackout: bool,
 }
@@ -71,7 +73,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { seed: 7, faults: Faults::default(), beta: 85.0, entry_fpa_deg: -1.6 }
+        Config {
+            seed: 7,
+            faults: Faults::default(),
+            beta: 85.0,
+            entry_fpa_deg: -1.6,
+        }
     }
 }
 
@@ -216,7 +223,8 @@ impl Capsule {
                     // Time-compressed coast from 400 km to entry interface.
                     s.phase = Phase::Coast;
                     let x = smoothstep((t - T_DEORBIT_END) / (T_ENTRY_INTERFACE - T_DEORBIT_END));
-                    let v_start = V_ORBIT - DEORBIT_ACCEL_G * G0 * (T_DEORBIT_END - T_DEORBIT_START);
+                    let v_start =
+                        V_ORBIT - DEORBIT_ACCEL_G * G0 * (T_DEORBIT_END - T_DEORBIT_START);
                     s.h = H_ORBIT + (H_EI - H_ORBIT) * x;
                     s.v = v_start + (V_EI - v_start) * x;
                     s.gamma = (self.cfg.entry_fpa_deg * x).to_radians();
@@ -292,7 +300,11 @@ impl Capsule {
         } else {
             0.0
         };
-        let ambient_c = if s.h > 60_000.0 { -40.0 } else { 15.0 - 0.0065 * s.h.min(11_000.0) };
+        let ambient_c = if s.h > 60_000.0 {
+            -40.0
+        } else {
+            15.0 - 0.0065 * s.h.min(11_000.0)
+        };
         let t_eq_c = ((s.heat_flux / (EMISSIVITY * SIGMA)).powf(0.25) - 273.15).max(ambient_c);
         let tau = if t_eq_c > s.t_shield { 6.0 } else { 45.0 };
         s.t_shield += (t_eq_c - s.t_shield) * (dt / tau);
@@ -332,7 +344,7 @@ impl Capsule {
         let n = |rng: &mut Rng, sd: f64| rng.gauss() * sd;
 
         let landed = self.landed();
-        if !landed || tick % 10 == 0 {
+        if !landed || tick.is_multiple_of(10) {
             let s = self.s.clone();
             let p = PayloadWriter::new(apid::NAV)
                 .f32(0, (s.h / 1000.0 + n(&mut self.rng, 0.002)) as f32)
@@ -344,14 +356,20 @@ impl Capsule {
                 .f32(24, (s.v * s.gamma.sin()) as f32)
                 .finish();
             let seq = self.next_seq(apid::NAV);
-            out.push(Packet { apid: apid::NAV, seq, met_us, payload: p });
+            out.push(Packet {
+                apid: apid::NAV,
+                seq,
+                met_us,
+                payload: p,
+            });
         }
-        if tick % 2 == 0 {
+        if tick.is_multiple_of(2) {
             let s = self.s.clone();
             let mut shield = s.t_shield + n(&mut self.rng, 1.5);
             if let Some(at) = self.cfg.faults.heatshield_spike_at {
-                if (s.met - at).abs() < 0.6 {
-                    shield += 950.0;
+                let half = self.cfg.faults.heatshield_spike_width.unwrap_or(1.2) / 2.0;
+                if (s.met - at).abs() < half {
+                    shield += 1400.0;
                 }
             }
             let p = PayloadWriter::new(apid::THERMAL)
@@ -361,9 +379,14 @@ impl Capsule {
                 .f32(12, (s.t_payload + n(&mut self.rng, 0.05)) as f32)
                 .finish();
             let seq = self.next_seq(apid::THERMAL);
-            out.push(Packet { apid: apid::THERMAL, seq, met_us, payload: p });
+            out.push(Packet {
+                apid: apid::THERMAL,
+                seq,
+                met_us,
+                payload: p,
+            });
         }
-        if tick % 5 == 0 {
+        if tick.is_multiple_of(5) {
             let s = self.s.clone();
             let p = PayloadWriter::new(apid::POWER)
                 .f32(0, (s.bus_v + n(&mut self.rng, 0.03)) as f32)
@@ -371,12 +394,25 @@ impl Capsule {
                 .f32(8, s.soc as f32)
                 .finish();
             let seq = self.next_seq(apid::POWER);
-            out.push(Packet { apid: apid::POWER, seq, met_us, payload: p });
+            out.push(Packet {
+                apid: apid::POWER,
+                seq,
+                met_us,
+                payload: p,
+            });
         }
-        if tick % 10 == 0 {
-            let p = PayloadWriter::new(apid::STATUS).u8(0, self.s.phase as u8).u8(1, self.s.flags).finish();
+        if tick.is_multiple_of(10) {
+            let p = PayloadWriter::new(apid::STATUS)
+                .u8(0, self.s.phase as u8)
+                .u8(1, self.s.flags)
+                .finish();
             let seq = self.next_seq(apid::STATUS);
-            out.push(Packet { apid: apid::STATUS, seq, met_us, payload: p });
+            out.push(Packet {
+                apid: apid::STATUS,
+                seq,
+                met_us,
+                payload: p,
+            });
         }
         out
     }
