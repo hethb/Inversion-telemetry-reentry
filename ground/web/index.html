@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reentry Ground Station</title>
+<style>
+  :root {
+    --bg: #0b0e12; --panel: #11161c; --panel-2: #161c24; --line: #232c37; --text: #d6dde6;
+    --dim: #7b8794; --accent: #5ab0ff; --green: #3ecf8e; --yellow: #f2c14e; --red: #ff5d5d;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 var(--sans); }
+  header { display: flex; align-items: center; gap: 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 13px; letter-spacing: .14em; font-weight: 600; margin: 0; color: var(--dim); }
+  .met { font: 600 22px var(--mono); letter-spacing: .04em; }
+  .pill { font: 600 11px var(--mono); padding: 3px 9px; border-radius: 3px; border: 1px solid var(--line); letter-spacing: .08em; }
+  .pill.aos { color: var(--green); border-color: #1f5c43; background: #0f2a20; }
+  .pill.los { color: var(--yellow); border-color: #6b5520; background: #2a2210; }
+  .pill.none { color: var(--dim); }
+  .pill.replay { color: var(--accent); border-color: #24507a; background: #0f2236; }
+  .spacer { flex: 1; }
+  .phases { display: flex; gap: 2px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .phase { flex: 1; text-align: center; font: 600 10.5px var(--mono); letter-spacing: .08em; padding: 6px 0; color: var(--dim); background: var(--panel); border-bottom: 2px solid transparent; }
+  .phase.done { color: #9fb3c8; border-bottom-color: #2b3a4a; }
+  .phase.now { color: var(--text); background: #142233; border-bottom-color: var(--accent); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; padding: 12px 16px 70px; }
+  .tiles { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line); padding: 8px 10px; }
+  .tile .k { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .v { font: 600 19px var(--mono); margin-top: 2px; white-space: nowrap; }
+  .tile .u { font-size: 11px; color: var(--dim); margin-left: 3px; }
+  .tile.yellow { border-left-color: var(--yellow); } .tile.yellow .v { color: var(--yellow); }
+  .tile.red { border-left-color: var(--red); background: #1f1214; } .tile.red .v { color: var(--red); }
+  .tile.green { border-left-color: var(--green); }
+  .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); }
+  .card h2 { margin: 0; padding: 8px 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+  .card h2 span { font-family: var(--mono); color: var(--text); text-transform: none; letter-spacing: 0; }
+  canvas.chart { width: 100%; height: 190px; display: block; }
+  aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .list { max-height: 260px; overflow: auto; }
+  .alarm { display: grid; grid-template-columns: 56px 1fr auto; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  .alarm .lvl { font: 700 10px var(--mono); padding: 2px 5px; text-align: center; border-radius: 2px; }
+  .alarm.red .lvl { background: var(--red); color: #200; } .alarm.yellow .lvl { background: var(--yellow); color: #221800; }
+  .alarm.cleared { opacity: .45; }
+  .alarm.active.red:not(.acked) { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { background: #2a1416; } }
+  .alarm .t { font: 11px var(--mono); color: var(--dim); }
+  .alarm button { font: 600 10px var(--mono); background: transparent; color: var(--text); border: 1px solid var(--line); padding: 3px 7px; cursor: pointer; }
+  .alarm button:hover { border-color: var(--accent); }
+  .empty { padding: 12px 10px; color: var(--dim); }
+  .event { display: grid; grid-template-columns: 82px 64px 1fr; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .event .t { font-family: var(--mono); color: var(--dim); }
+  .event .kind { font: 600 10px var(--mono); color: var(--accent); padding-top: 2px; }
+  .event .kind.LOS { color: var(--yellow); } .event .kind.AOS { color: var(--green); }
+  table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  th, td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--dim); font-weight: 500; font-size: 11px; }
+  td.bad { color: var(--yellow); }
+  canvas#track { width: 100%; height: 180px; display: block; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-top: 1px solid var(--line); }
+  footer input[type=range] { flex: 1; accent-color: var(--accent); }
+  footer button { font: 600 11px var(--mono); background: var(--panel-2); color: var(--text); border: 1px solid var(--line); padding: 5px 12px; cursor: pointer; letter-spacing: .08em; }
+  footer button.on { border-color: var(--green); color: var(--green); }
+  footer .cursor { font: 12px var(--mono); color: var(--dim); min-width: 120px; text-align: right; }
+  @media (max-width: 1200px) { main { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(4, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>REENTRY GROUND STATION</h1>
+  <div class="met" id="met">T+00:00:00</div>
+  <div class="pill none" id="link">NO SIGNAL</div>
+  <div class="pill replay" id="mode" hidden>REPLAY</div>
+  <div class="spacer"></div>
+  <div class="pill" id="frames" title="valid frames / inferred missing / rejected">RX 0 · MISS 0 · REJ 0</div>
+</header>
+<div class="phases" id="phases"></div>
+<main>
+  <section>
+    <div class="tiles" id="tiles"></div>
+    <div class="charts">
+      <div class="card"><h2>Altitude <span id="h-alt"></span></h2><canvas class="chart" id="c-alt"></canvas></div>
+      <div class="card"><h2>Velocity <span id="h-vel"></span></h2><canvas class="chart" id="c-vel"></canvas></div>
+      <div class="card"><h2>Sensed acceleration <span id="h-acc"></span></h2><canvas class="chart" id="c-acc"></canvas></div>
+      <div class="card"><h2>Heatshield / backshell <span id="h-temp"></span></h2><canvas class="chart" id="c-temp"></canvas></div>
+      <div class="card"><h2>Stagnation heat flux <span id="h-flux"></span></h2><canvas class="chart" id="c-flux"></canvas></div>
+      <div class="card"><h2>Power bus <span id="h-pwr"></span></h2><canvas class="chart" id="c-pwr"></canvas></div>
+    </div>
+  </section>
+  <aside>
+    <div class="card"><h2>Alarms <span id="alarm-count">0 active</span></h2><div class="list" id="alarms"><div class="empty">No alarms</div></div></div>
+    <div class="card"><h2>Link</h2><table id="linktable"></table></div>
+    <div class="card"><h2>Ground track</h2><canvas id="track"></canvas></div>
+    <div class="card"><h2>Event log</h2><div class="list" id="events"></div></div>
+  </aside>
+</main>
+<footer>
+  <button id="live" class="on">LIVE</button>
+  <input type="range" id="scrub" min="0" max="1000" value="1000">
+  <div class="cursor" id="cursor">T+00:00:00</div>
+</footer>
+<script>
+"use strict";
+const S = {
+  meta: null, hist: new Map(), alarms: new Map(), events: [], status: null,
+  live: true, cursor: 0, dirty: true,
+};
+const $ = (id) => document.getElementById(id);
+const CH = {};               // channel name -> id
+const LIMIT = {};            // channel name -> limit
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COL = { accent: css("--accent"), green: css("--green"), yellow: css("--yellow"), red: css("--red"), dim: css("--dim"), line: css("--line"), text: css("--text") };
+
+function fmtMet(t) {
+  if (t == null || !isFinite(t)) return "T+00:00:00";
+  const s = Math.max(0, Math.floor(t)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return `T+${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+function levelOf(name, v) {
+  const l = LIMIT[name]; if (!l || v == null) return "nominal";
+  if ((l.red_lo != null && v < l.red_lo) || (l.red_hi != null && v > l.red_hi)) return "red";
+  if ((l.yellow_lo != null && v < l.yellow_lo) || (l.yellow_hi != null && v > l.yellow_hi)) return "yellow";
+  return "nominal";
+}
+function series(name) { return S.hist.get(CH[name]) || []; }
+function valueAt(name, t) {
+  const d = series(name); if (!d.length) return null;
+  if (t >= d[d.length - 1][0]) return d[d.length - 1][1];
+  let lo = 0, hi = d.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (d[mid][0] <= t) lo = mid; else hi = mid - 1; }
+  return d[lo][0] <= t ? d[lo][1] : null;
+}
+function viewTime() { return S.live ? (S.status ? S.status.met : 0) : S.cursor; }
+function maxMet() { return S.status ? S.status.met : 0; }
+
+// ---------- static layout ----------
+const TILES = [
+  ["nav.altitude", "Altitude", "km", 2], ["nav.velocity", "Velocity", "m/s", 0],
+  ["nav.accel", "Accel", "g", 2], ["nav.vspeed", "Vert speed", "m/s", 1],
+  ["thermal.heatshield", "Heatshield", "°C", 0], ["thermal.heatflux", "Heat flux", "W/cm²", 1],
+  ["power.bus_v", "Bus", "V", 2], ["power.soc", "Battery", "%", 1],
+];
+function buildLayout() {
+  $("tiles").innerHTML = TILES.map(([n, k, u]) =>
+    `<div class="tile" id="t-${n}"><div class="k">${k}</div><div class="v"><span>--</span><span class="u">${u}</span></div></div>`).join("");
+  $("phases").innerHTML = S.meta.phases.map(p => `<div class="phase" data-id="${p.id}">${p.name}</div>`).join("");
+}
+
+// ---------- charts ----------
+function setupCanvas(c) {
+  const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  }
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [ctx, r.width, r.height];
+}
+function niceTicks(lo, hi, n) {
+  const span = hi - lo || 1, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(s => span / s <= n) || mag * 10;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function blackoutSpans() {
+  const spans = []; let open = null;
+  for (const e of S.events) {
+    if (e.kind === "LOS") open = e.met;
+    if (e.kind === "AOS" && open != null) { spans.push([open, e.met]); open = null; }
+  }
+  if (open != null) spans.push([open, maxMet()]);
+  return spans;
+}
+function drawChart(id, lines, opt = {}) {
+  const c = $(id); const [ctx, W, H] = setupCanvas(c);
+  ctx.clearRect(0, 0, W, H);
+  const pad = { l: 52, r: 10, t: 8, b: 22 };
+  const tEnd = viewTime(), tMax = Math.max(maxMet(), 1);
+  const t0 = 0, t1 = tMax;
+  let lo = Infinity, hi = -Infinity;
+  for (const L of lines) for (const [t, v] of L.data) { if (t > tEnd) break; if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (const lim of opt.limits || []) { if (isFinite(lim.v) && hi > -Infinity && lim.v < hi * 1.6 + 1) { lo = Math.min(lo, lim.v); hi = Math.max(hi, lim.v); } }
+  if (opt.zero) lo = Math.min(lo, 0);
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  if (hi - lo < 1e-6) { hi += 1; lo -= 1; }
+  const m = (hi - lo) * 0.08; lo -= opt.zero && lo >= 0 ? 0 : m; hi += m;
+  const X = (t) => pad.l + (t - t0) / (t1 - t0) * (W - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  // blackout shading
+  ctx.fillStyle = "rgba(242,193,78,0.07)";
+  for (const [a, b] of blackoutSpans()) ctx.fillRect(X(a), pad.t, Math.max(1, X(b) - X(a)), H - pad.t - pad.b);
+  // grid + axes
+  ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.fillStyle = COL.dim; ctx.font = "10px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const v of niceTicks(lo, hi, 4)) { const y = Math.round(Y(v)) + .5; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke(); ctx.fillText(Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v), pad.l - 6, y); }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const t of niceTicks(t0, t1, 6)) { const x = Math.round(X(t)) + .5; ctx.fillText(Math.round(t) + "s", x, H - pad.b + 5); }
+  // limit lines
+  for (const lim of opt.limits || []) {
+    if (!isFinite(lim.v) || lim.v < lo || lim.v > hi) continue;
+    ctx.strokeStyle = lim.level === "red" ? COL.red : COL.yellow; ctx.setLineDash([4, 4]);
+    const y = Math.round(Y(lim.v)) + .5; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // series, min/max-decimated per pixel column
+  for (const L of lines) {
+    ctx.strokeStyle = L.color; ctx.lineWidth = 1.5; ctx.beginPath();
+    let px = -1, mn = 0, mx = 0, started = false;
+    const flush = () => { if (px < 0) return; if (!started) { ctx.moveTo(px, Y(mn)); started = true; } ctx.lineTo(px, Y(mn)); ctx.lineTo(px, Y(mx)); };
+    for (const [t, v] of L.data) {
+      if (t > tEnd) break;
+      const x = Math.round(X(t));
+      if (x !== px) { flush(); px = x; mn = mx = v; } else { if (v < mn) mn = v; if (v > mx) mx = v; }
+    }
+    flush(); ctx.stroke();
+  }
+  // cursor
+  if (!S.live) { ctx.strokeStyle = COL.accent; const x = Math.round(X(tEnd)) + .5; ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, H - pad.b); ctx.stroke(); }
+  // legend
+  if (lines.length > 1) {
+    ctx.textAlign = "left"; ctx.textBaseline = "top"; let lx = pad.l + 8;
+    for (const L of lines) { ctx.fillStyle = L.color; ctx.fillRect(lx, pad.t + 6, 10, 2); ctx.fillStyle = COL.dim; ctx.fillText(L.label, lx + 14, pad.t + 1); lx += ctx.measureText(L.label).width + 30; }
+  }
+}
+function limitLines(name) {
+  const l = LIMIT[name]; if (!l) return [];
+  return [["yellow_hi", "yellow"], ["red_hi", "red"], ["yellow_lo", "yellow"], ["red_lo", "red"]]
+    .filter(([k]) => l[k] != null).map(([k, level]) => ({ v: l[k], level }));
+}
+function drawTrack() {
+  const c = $("track"); const [ctx, W, H] = setupCanvas(c); ctx.clearRect(0, 0, W, H);
+  const la = series("nav.lat"), lo = series("nav.lon"); const tEnd = viewTime();
+  const pts = []; for (let i = 0; i < Math.min(la.length, lo.length); i++) { if (la[i][0] > tEnd) break; pts.push([lo[i][1], la[i][1]]); }
+  if (!pts.length) { ctx.fillStyle = COL.dim; ctx.font = "12px sans-serif"; ctx.fillText("Waiting for navigation data", 12, 20); return; }
+  let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+  const span = Math.max(x1 - x0, (y1 - y0) * (W / H), 2) * 1.15, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const X = (lon) => W / 2 + (lon - cx) / span * W, Y = (lat) => H / 2 - (lat - cy) / span * W;
+  ctx.strokeStyle = COL.line; ctx.fillStyle = COL.dim; ctx.font = "10px ui-monospace, monospace";
+  const step = span > 30 ? 10 : span > 10 ? 5 : 1;
+  for (let g = Math.ceil((cx - span) / step) * step; g < cx + span; g += step) { const x = X(g); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(g + "°", x + 3, H - 4); }
+  for (let g = Math.ceil((cy - span) / step) * step; g < cy + span; g += step) { const y = Y(g); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.fillText(g + "°", 3, y - 3); }
+  ctx.strokeStyle = COL.accent; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))); ctx.stroke();
+  const [ex, ey] = pts[pts.length - 1];
+  ctx.fillStyle = S.status && S.status.phase === 6 ? COL.green : COL.text; ctx.beginPath(); ctx.arc(X(ex), Y(ey), 4, 0, 7); ctx.fill();
+  ctx.fillStyle = COL.dim; ctx.fillText(`${ey.toFixed(2)}°, ${ex.toFixed(2)}°`, Math.min(X(ex) + 8, W - 110), Y(ey) - 8);
+}
+
+// ---------- panels ----------
+function renderTiles() {
+  const t = viewTime();
+  for (const [name, , , dp] of TILES) {
+    const el = $("t-" + name); if (!el) continue;
+    const v = valueAt(name, t);
+    el.querySelector(".v span").textContent = v == null ? "--" : v.toFixed(dp);
+    el.className = "tile " + (v == null ? "" : levelOf(name, v) === "nominal" ? (LIMIT[name] ? "green" : "") : levelOf(name, v));
+  }
+}
+function renderHeader() {
+  const st = S.status; if (!st) return;
+  $("met").textContent = fmtMet(viewTime());
+  const link = $("link");
+  link.textContent = { Aos: "AOS", Los: "LOS", NoSignal: "NO SIGNAL" }[st.link] || st.link;
+  link.className = "pill " + ({ Aos: "aos", Los: "los" }[st.link] || "none");
+  $("mode").hidden = S.live;
+  const rx = st.stats.reduce((a, s) => a + s.received, 0), miss = st.stats.reduce((a, s) => a + s.missing, 0);
+  const rej = Object.values(st.errors).reduce((a, b) => a + b, 0);
+  $("frames").textContent = `RX ${rx} · MISS ${miss} · REJ ${rej}`;
+  const ph = S.live ? st.phase : valueAt("status.phase", viewTime());
+  document.querySelectorAll(".phase").forEach(el => {
+    const id = +el.dataset.id; el.className = "phase" + (ph == null ? "" : id < ph ? " done" : id === ph ? " now" : "");
+  });
+  const st2 = st.stats.map(s => `<tr><td>${s.name}</td><td>${s.received}</td><td>${s.rate_hz.toFixed(0)}</td><td class="${s.missing ? "bad" : ""}">${s.missing}</td><td>${s.last_seq ?? "-"}</td></tr>`).join("");
+  const e = st.errors;
+  $("linktable").innerHTML = `<tr><th>APID</th><th>RX</th><th>Hz</th><th>Missing</th><th>Seq</th></tr>${st2}
+    <tr><td>Rejected</td><td colspan="4" class="${rej ? "bad" : ""}">CRC ${e.crc} · len ${e.length} · hdr ${e.header} · apid ${e.unknown_apid}</td></tr>`;
+}
+function renderAlarms() {
+  const list = [...S.alarms.values()].sort((a, b) => (a.cleared_met != null) - (b.cleared_met != null) || b.met - a.met);
+  const active = list.filter(a => a.cleared_met == null).length;
+  $("alarm-count").textContent = `${active} active`;
+  $("alarms").innerHTML = list.length ? list.map(a => {
+    const lv = a.level.toLowerCase(), st = a.cleared_met == null ? "active" : "cleared";
+    const unit = (S.meta.channels.find(c => c.name === a.channel) || {}).unit || "m/s";
+    return `<div class="alarm ${lv} ${st} ${a.acked ? "acked" : ""}">
+      <div class="lvl">${a.level.toUpperCase()}</div>
+      <div><div>${a.label}: ${a.value.toFixed(1)} ${unit}</div><div class="t">${fmtMet(a.met)}${a.cleared_met != null ? " → cleared " + fmtMet(a.cleared_met) : ""}</div></div>
+      ${a.acked ? '<div class="t">ACK</div>' : `<button data-ack="${a.id}">ACK</button>`}</div>`;
+  }).join("") : '<div class="empty">No alarms</div>';
+}
+function renderEvents() {
+  $("events").innerHTML = S.events.slice().reverse().map(e =>
+    `<div class="event"><div class="t">${fmtMet(e.met)}</div><div class="kind ${e.kind}">${e.kind}</div><div>${e.text}</div></div>`).join("");
+}
+function render() {
+  if (!S.meta) return;
+  renderHeader(); renderTiles();
+  const blue = COL.accent, orange = "#ff9f43";
+  drawChart("c-alt", [{ data: series("nav.altitude"), color: blue, label: "km" }], { zero: true });
+  drawChart("c-vel", [{ data: series("nav.velocity"), color: blue, label: "m/s" }], { zero: true });
+  drawChart("c-acc", [{ data: series("nav.accel"), color: blue, label: "g" }], { zero: true, limits: limitLines("nav.accel") });
+  drawChart("c-temp", [{ data: series("thermal.heatshield"), color: orange, label: "heatshield °C" }, { data: series("thermal.backshell"), color: blue, label: "backshell °C" }], { limits: limitLines("thermal.heatshield") });
+  drawChart("c-flux", [{ data: series("thermal.heatflux"), color: orange, label: "W/cm²" }], { zero: true });
+  drawChart("c-pwr", [{ data: series("power.bus_v"), color: blue, label: "bus V" }, { data: series("power.current"), color: COL.green, label: "current A" }], { zero: true, limits: limitLines("power.bus_v") });
+  const last = (n, dp, u) => { const v = valueAt(n, viewTime()); return v == null ? "" : `${v.toFixed(dp)} ${u}`; };
+  $("h-alt").textContent = last("nav.altitude", 2, "km"); $("h-vel").textContent = last("nav.velocity", 0, "m/s");
+  $("h-acc").textContent = last("nav.accel", 2, "g"); $("h-temp").textContent = last("thermal.heatshield", 0, "°C");
+  $("h-flux").textContent = last("thermal.heatflux", 1, "W/cm²"); $("h-pwr").textContent = last("power.bus_v", 2, "V");
+  drawTrack();
+  $("cursor").textContent = fmtMet(viewTime());
+  if (S.live) $("scrub").value = 1000;
+}
+function schedule() { if (!S.dirty) { S.dirty = true; requestAnimationFrame(() => { S.dirty = false; render(); }); } }
+
+// ---------- data ----------
+function applySnapshot(m) {
+  S.meta = m.meta; S.status = m.status;
+  for (const c of m.meta.channels) CH[c.name] = c.id;
+  for (const l of m.meta.limits) LIMIT[l.channel] = l;
+  S.hist = new Map(Object.entries(m.history).map(([k, v]) => [+k, v]));
+  S.alarms = new Map(m.alarms.map(a => [a.id, a])); S.events = m.events;
+  buildLayout(); renderAlarms(); renderEvents(); S.dirty = false; schedule();
+}
+function applyBatch(m) {
+  S.status = m.status;
+  for (const [ch, t, v] of m.samples) { let a = S.hist.get(ch); if (!a) S.hist.set(ch, a = []); a.push([t, v]); }
+  if (m.alarms.length) { for (const a of m.alarms) S.alarms.set(a.id, a); renderAlarms(); }
+  if (m.events.length) { S.events.push(...m.events); renderEvents(); }
+  schedule();
+}
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onmessage = (ev) => { const m = JSON.parse(ev.data); m.type === "snapshot" ? applySnapshot(m) : applyBatch(m); };
+  ws.onclose = () => { $("link").textContent = "DISCONNECTED"; $("link").className = "pill los"; setTimeout(connect, 1500); };
+}
+$("alarms").addEventListener("click", async (e) => {
+  const id = e.target.dataset.ack; if (!id) return;
+  const r = await fetch(`/api/alarms/${id}/ack`, { method: "POST" }).then(r => r.json());
+  if (r.ok) { S.alarms.set(r.alarm.id, r.alarm); renderAlarms(); }
+});
+$("scrub").addEventListener("input", (e) => {
+  const v = +e.target.value; S.live = v >= 1000; S.cursor = maxMet() * v / 1000;
+  $("live").classList.toggle("on", S.live); schedule();
+});
+$("live").addEventListener("click", () => { S.live = true; $("live").classList.add("on"); schedule(); });
+window.addEventListener("resize", schedule);
+connect();
+</script>
+</body>
+</html>

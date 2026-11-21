@@ -124,6 +124,16 @@ pub struct Capsule {
     link_rng: Rng,
     seq: [u16; 4],
     tick: u64,
+    /// Ground truth link accounting, so tests can check the ground station.
+    pub link: LinkTruth,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LinkTruth {
+    pub generated: u64,
+    pub blackout_lost: u64,
+    pub dropped: u64,
+    pub corrupted: u64,
 }
 
 fn rho(h: f64) -> f64 {
@@ -168,6 +178,7 @@ impl Capsule {
             link_rng,
             seq: [0; 4],
             tick: 0,
+            link: LinkTruth::default(),
         }
     }
 
@@ -380,7 +391,9 @@ impl Capsule {
 
     /// Encode packets and apply link effects (blackout, loss, bit errors).
     pub fn downlink(&mut self, packets: Vec<Packet>) -> Vec<Vec<u8>> {
+        self.link.generated += packets.len() as u64;
         if self.in_blackout() {
+            self.link.blackout_lost += packets.len() as u64;
             return Vec::new();
         }
         let f = self.cfg.faults.clone();
@@ -388,12 +401,14 @@ impl Capsule {
             .into_iter()
             .filter_map(|p| {
                 if self.link_rng.f64() < f.drop_rate {
+                    self.link.dropped += 1;
                     return None;
                 }
                 let mut frame = p.encode();
                 if self.link_rng.f64() < f.corrupt_rate {
                     let i = (self.link_rng.next_u64() as usize) % frame.len();
                     frame[i] ^= 1 << (self.link_rng.next_u64() % 8);
+                    self.link.corrupted += 1;
                 }
                 Some(frame)
             })
