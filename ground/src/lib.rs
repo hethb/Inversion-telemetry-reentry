@@ -332,17 +332,18 @@ impl Ground {
         match c.name {
             "status.phase" => {
                 if let Some(p) = Phase::from_u8(v as u8)
-                    && self.phase != Some(p) {
-                        let text = match self.phase {
-                            None => format!("Phase {}", p.name()),
-                            Some(prev) => format!("{} → {}", prev.name(), p.name()),
-                        };
-                        self.phase = Some(p);
-                        self.event(delta, "PHASE", text);
-                        if p == Phase::Landed {
-                            self.on_touchdown(met, delta);
-                        }
+                    && self.phase != Some(p)
+                {
+                    let text = match self.phase {
+                        None => format!("Phase {}", p.name()),
+                        Some(prev) => format!("{} → {}", prev.name(), p.name()),
+                    };
+                    self.phase = Some(p);
+                    self.event(delta, "PHASE", text);
+                    if p == Phase::Landed {
+                        self.on_touchdown(met, delta);
                     }
+                }
             }
             "status.flags" => {
                 let f = v as u8;
@@ -475,16 +476,17 @@ impl Ground {
         let mut delta = Delta::default();
         if self.link == LinkState::Aos
             && let Some(t) = self.last_any_rx_s
-                && now_s - t > LOS_TIMEOUT_S {
-                    self.link = LinkState::Los;
-                    let in_entry = self.phase == Some(Phase::Entry);
-                    let text = if in_entry {
-                        "Loss of signal (expected: entry plasma blackout)".to_string()
-                    } else {
-                        "Loss of signal".to_string()
-                    };
-                    self.event(&mut delta, "LOS", text);
-                }
+            && now_s - t > LOS_TIMEOUT_S
+        {
+            self.link = LinkState::Los;
+            let in_entry = self.phase == Some(Phase::Entry);
+            let text = if in_entry {
+                "Loss of signal (expected: entry plasma blackout)".to_string()
+            } else {
+                "Loss of signal".to_string()
+            };
+            self.event(&mut delta, "LOS", text);
+        }
         for s in &mut self.stats {
             s.window.retain(|t| now_s - *t <= 1.0);
             s.rate_hz = s.window.len() as f64;
